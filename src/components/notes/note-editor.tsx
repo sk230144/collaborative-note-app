@@ -8,7 +8,6 @@ import { Textarea } from '@/components/ui/textarea';
 import VersionHistory from './version-history';
 import { formatDistanceToNow } from 'date-fns';
 import { useDebounce } from '@/hooks/use-debounce';
-import type { Timestamp } from 'firebase/firestore';
 
 type NoteEditorProps = {
   note: Note;
@@ -19,55 +18,58 @@ export default function NoteEditor({ note }: NoteEditorProps) {
   const [content, setContent] = useState(note.content);
   const { updateNote } = useNotes();
   const isMounted = useRef(false);
+  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const debouncedTitle = useDebounce(title, 500);
-  const debouncedContent = useDebounce(content, 500);
-
-  // This effect will re-sync the local state (title, content)
-  // whenever the active note prop changes. This is the key fix.
+  // Effect to reset state when the note prop changes
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
-    // Reset the mounted flag to prevent auto-saving on first load of a new note
-    isMounted.current = false;
+    isMounted.current = false; // Prevent auto-saving on first load of a new note
+    
+    // Clear any pending debounced save from the previous note
+    if (debounceTimeout.current) {
+      clearTimeout(debounceTimeout.current);
+    }
   }, [note.id, note.title, note.content]);
 
-  // This effect handles saving the debounced changes.
+  // Effect to handle debounced saving
   useEffect(() => {
-    // We use isMounted to prevent the effect from running on the initial render
-    // of a new note, which could cause a race condition. It now only saves
-    // after the component has mounted AND the user has actually made a change.
+    // Only save after the initial render and when changes are made
     if (isMounted.current) {
-      const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
-      let needsUpdate = false;
+       if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+      }
+      debounceTimeout.current = setTimeout(() => {
+        const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
+        let needsUpdate = false;
 
-      // Check against the prop from context, not a stale value.
-      if (debouncedTitle !== note.title) {
-        updates.title = debouncedTitle;
-        needsUpdate = true;
-      }
-      if (debouncedContent !== note.content) {
-        updates.content = debouncedContent;
-        needsUpdate = true;
-      }
+        if (title !== note.title) {
+          updates.title = title;
+          needsUpdate = true;
+        }
+        if (content !== note.content) {
+          updates.content = content;
+          needsUpdate = true;
+        }
 
-      if (needsUpdate) {
-        updateNote(note.id, updates);
-      }
+        if (needsUpdate) {
+          updateNote(note.id, updates);
+        }
+      }, 500);
     } else {
-      // After the first render (or after a note switch), we set isMounted to true.
       isMounted.current = true;
     }
-  }, [debouncedTitle, debouncedContent, note.id, note.title, note.content, updateNote]);
 
-  const getUpdatedAtTimestamp = (timestamp: Timestamp | number): Date => {
-    if (typeof timestamp === 'number') {
-      return new Date(timestamp);
-    }
-    if (timestamp && typeof timestamp.toDate === 'function') {
-      return timestamp.toDate();
-    }
-    return new Date();
+    // Cleanup timeout on unmount or when dependencies change
+    return () => {
+      if (debounceTimeout.current) {
+        clearTimeout(debounceTimeout.current);
+      }
+    };
+  }, [title, content, note.id, note.title, note.content, updateNote]);
+
+  const getUpdatedAtTimestamp = (timestamp: number): Date => {
+    return new Date(timestamp);
   };
 
   return (
