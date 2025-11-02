@@ -18,22 +18,30 @@ export default function NoteEditor({ note }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const { updateNote } = useNotes();
+  const isMounted = useRef(false);
 
   const debouncedTitle = useDebounce(title, 500);
   const debouncedContent = useDebounce(content, 500);
 
   // This effect will re-sync the local state (title, content)
-  // whenever the active note prop changes.
+  // whenever the active note prop changes. This is the key fix.
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
+    // Reset the mounted flag to prevent auto-saving on first load of a new note
+    isMounted.current = false;
   }, [note.id, note.title, note.content]);
 
   // This effect handles saving the debounced changes.
   useEffect(() => {
+    // We use isMounted to prevent the effect from running on the initial render
+    // of a new note, which could cause a race condition. It now only saves
+    // after the component has mounted AND the user has actually made a change.
+    if (isMounted.current) {
       const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
       let needsUpdate = false;
 
+      // Check against the prop from context, not a stale value.
       if (debouncedTitle !== note.title) {
         updates.title = debouncedTitle;
         needsUpdate = true;
@@ -46,7 +54,11 @@ export default function NoteEditor({ note }: NoteEditorProps) {
       if (needsUpdate) {
         updateNote(note.id, updates);
       }
-  }, [debouncedTitle, debouncedContent, note, updateNote]);
+    } else {
+      // After the first render (or after a note switch), we set isMounted to true.
+      isMounted.current = true;
+    }
+  }, [debouncedTitle, debouncedContent, note.id, note.title, note.content, updateNote]);
 
   const getUpdatedAtTimestamp = (timestamp: Timestamp | number): Date => {
     if (typeof timestamp === 'number') {
