@@ -17,7 +17,7 @@ import {
   setDocumentNonBlocking,
   updateDocumentNonBlocking
 } from '@/firebase/non-blocking-updates';
-import { collection, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 
 const createWelcomeNote = (userId: string): Omit<Note, 'id' | 'createdAt' | 'updatedAt'> => ({
     title: 'Welcome to CollabNote!',
@@ -88,7 +88,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const addNote = useCallback(() => {
     if (!firestore || !user) return;
     const newNoteRef = doc(collection(firestore, 'users', user.uid, 'notes'));
-    addDocumentNonBlocking(newNoteRef, {
+    addDocumentNonBlocking(collection(firestore, 'users', user.uid, 'notes'), {
       id: newNoteRef.id,
       title: 'Untitled Note',
       content: '',
