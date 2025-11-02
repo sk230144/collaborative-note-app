@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Note } from '@/lib/types';
 import { useNotes } from '@/context/notes-provider';
-import { useDebounce } from '@/hooks/use-debounce';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import VersionHistory from './version-history';
@@ -17,28 +16,41 @@ export default function NoteEditor({ note }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const { updateNote } = useNotes();
+  const isMounted = useRef(false);
 
-  const debouncedTitle = useDebounce(title, 500);
-  const debouncedContent = useDebounce(content, 500);
-
+  // This effect will re-sync the local state (title, content)
+  // whenever the active note prop changes.
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
   }, [note.id, note.title, note.content]);
 
+  // This effect handles saving the note.
   useEffect(() => {
-    // Only update if the title has actually changed
-    if (debouncedTitle !== note.title) {
-      updateNote(note.id, { title: debouncedTitle });
-    }
-  }, [debouncedTitle, note.id, note.title, updateNote]);
+    // We use a ref to prevent saving on the initial component mount.
+    // We only want to save when the user actually makes a change.
+    if (isMounted.current) {
+      // Create a timeout to save the note 500ms after the user stops typing.
+      const timer = setTimeout(() => {
+        const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
+        if (title !== note.title) {
+          updates.title = title;
+        }
+        if (content !== note.content) {
+          updates.content = content;
+        }
+        if (Object.keys(updates).length > 0) {
+          updateNote(note.id, updates);
+        }
+      }, 500); // 500ms debounce delay
 
-  useEffect(() => {
-    // Only update if the content has actually changed
-    if (debouncedContent !== note.content) {
-      updateNote(note.id, { content: debouncedContent });
+      // Cleanup function to clear the timeout if the user types again
+      return () => clearTimeout(timer);
+    } else {
+      // On the first render, we set the ref to true.
+      isMounted.current = true;
     }
-  }, [debouncedContent, note.id, note.content, updateNote]);
+  }, [title, content, note.id, note.title, note.content, updateNote]);
 
   return (
     <div className="flex flex-col h-full">
