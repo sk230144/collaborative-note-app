@@ -36,7 +36,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       if (item) {
         const parsedNotes = JSON.parse(item);
         setNotes(parsedNotes);
-        if (parsedNotes.length > 0) {
+        if (parsedNotes.length > 0 && !activeNoteId) {
           setActiveNoteId(parsedNotes[0].id);
         }
       } else {
@@ -51,12 +51,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       setNotes([welcomeNote]);
       setActiveNoteId(welcomeNote.id);
     }
-  }, []);
+  }, [activeNoteId]);
 
   const saveNotes = useCallback((newNotes: Note[]) => {
-    setNotes(newNotes);
     try {
       window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(newNotes));
+      setNotes(newNotes);
     } catch (error) {
       console.error('Error saving notes to localStorage', error);
     }
@@ -99,30 +99,28 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateNote = (noteId: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => {
-    setNotes(prevNotes => {
-      const noteToUpdate = prevNotes.find((note) => note.id === noteId);
-      if (!noteToUpdate) return prevNotes;
-      
-      const hasContentChanged = 'content' in updates && updates.content !== noteToUpdate.content;
-      
-      const newVersions = hasContentChanged ? [
-        { id: crypto.randomUUID(), content: noteToUpdate.content, timestamp: noteToUpdate.updatedAt },
-        ...noteToUpdate.versions,
-      ].slice(0, 20) : noteToUpdate.versions;
+  const updateNote = useCallback((noteId: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => {
+    const newNotes = notes.map((note) => {
+      if (note.id === noteId) {
+        const noteToUpdate = note;
+        const hasContentChanged = 'content' in updates && updates.content !== noteToUpdate.content;
+        
+        const newVersions = hasContentChanged ? [
+          { id: crypto.randomUUID(), content: noteToUpdate.content, timestamp: noteToUpdate.updatedAt },
+          ...noteToUpdate.versions,
+        ].slice(0, 20) : noteToUpdate.versions;
 
-      const updatedNote: Note = {
-        ...noteToUpdate,
-        ...updates,
-        updatedAt: Date.now(),
-        ...(hasContentChanged && { versions: newVersions }),
-      };
-
-      const newNotes = prevNotes.map((note) => (note.id === noteId ? updatedNote : note));
-      window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(newNotes));
-      return newNotes;
+        return {
+          ...noteToUpdate,
+          ...updates,
+          updatedAt: Date.now(),
+          ...(hasContentChanged && { versions: newVersions }),
+        };
+      }
+      return note;
     });
-  };
+    saveNotes(newNotes);
+  }, [notes, saveNotes]);
 
   const restoreVersion = (noteId: string, versionId: string) => {
     const note = notes.find((n) => n.id === noteId);
