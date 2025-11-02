@@ -12,9 +12,8 @@ import {
   initiateAnonymousSignIn 
 } from '@/firebase/non-blocking-login';
 import { 
-  addDocumentNonBlocking, 
-  deleteDocumentNonBlocking, 
   setDocumentNonBlocking,
+  deleteDocumentNonBlocking, 
   updateDocumentNonBlocking
 } from '@/firebase/non-blocking-updates';
 import { collection, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
@@ -88,7 +87,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const addNote = useCallback(() => {
     if (!firestore || !user) return;
     const newNoteRef = doc(collection(firestore, 'users', user.uid, 'notes'));
-    addDocumentNonBlocking(collection(firestore, 'users', user.uid, 'notes'), {
+    setDocumentNonBlocking(newNoteRef, {
       id: newNoteRef.id,
       title: 'Untitled Note',
       content: '',
@@ -96,7 +95,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       ownerId: user.uid,
-    });
+    }, { merge: true });
     setActiveNoteId(newNoteRef.id);
   }, [firestore, user]);
 

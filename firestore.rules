@@ -83,7 +83,7 @@ service cloud.firestore {
       allow list: if isOwner(userId);
 
       // Write Rules:
-      allow create: if isOwner(userId) && request.resource.data.id == noteId;
+      allow create: if isOwner(userId);
       allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
     }
