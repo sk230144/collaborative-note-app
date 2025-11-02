@@ -1,0 +1,132 @@
+{
+  "entities": {
+    "Note": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Note",
+      "type": "object",
+      "description": "Represents a single note in the collaborative note-taking application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Note entity."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the note."
+        },
+        "content": {
+          "type": "string",
+          "description": "The rich text content of the note, including formatting."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The timestamp when the note was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "The timestamp when the note was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "content",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Version": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Version",
+      "type": "object",
+      "description": "Represents a specific version of a note.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Version entity."
+        },
+        "noteId": {
+          "type": "string",
+          "description": "Reference to Note. (Relationship: Note 1:N Version)"
+        },
+        "content": {
+          "type": "string",
+          "description": "The content of the note at this version."
+        },
+        "versionNumber": {
+          "type": "number",
+          "description": "The version number of the note."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "The timestamp when this version was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "noteId",
+        "content",
+        "versionNumber",
+        "createdAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}/notes/{noteId}",
+        "definition": {
+          "entityName": "Note",
+          "schema": {
+            "$ref": "#/backend/entities/Note"
+          },
+          "description": "Represents a note owned by a user. Includes denormalized 'members' map for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The ID of the user who owns the note."
+            },
+            {
+              "name": "noteId",
+              "description": "The unique ID of the note."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/notes/{noteId}/versions/{versionId}",
+        "definition": {
+          "entityName": "Version",
+          "schema": {
+            "$ref": "#/backend/entities/Version"
+          },
+          "description": "Represents a version of a note. Inherits authorization from the parent note.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The ID of the user who owns the note."
+            },
+            {
+              "name": "noteId",
+              "description": "The ID of the note to which this version belongs."
+            },
+            {
+              "name": "versionId",
+              "description": "The unique ID of the note version."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support a collaborative note-taking application with real-time collaboration and version history. It prioritizes authorization independence by denormalizing user roles and memberships where applicable. Segregation is achieved by using dedicated collections for different entities (notes, versions). Access is modeled using path-based ownership for user-specific data and membership maps for collaborative notes.\n\nSpecifically, the structure uses a `users/{userId}/notes/{noteId}` structure to manage notes owned by individual users.  Each note's `members` field stores a map of user IDs to roles, enabling collaborative access without requiring `get()` calls in security rules. Versions are stored in `users/{userId}/notes/{noteId}/versions/{versionId}`, inheriting the note's access control.\n\nThis design supports QAPs by allowing secure `list` operations based on the denormalized `members` field within each note.  Users can only list notes where their UID appears in the `members` map or where they are the owner based on the path."
+  }
+}
