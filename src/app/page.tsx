@@ -1,3 +1,10 @@
+import { NotesProvider } from '@/context/notes-provider';
+import CollabNoteClient from '@/components/collab-note-client';
+
 export default function Home() {
-  return <></>;
+  return (
+    <NotesProvider>
+      <CollabNoteClient />
+    </NotesProvider>
+  );
 }
