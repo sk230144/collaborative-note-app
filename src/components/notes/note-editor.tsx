@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { Note } from '@/lib/types';
 import { useNotes } from '@/context/notes-provider';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -17,30 +17,28 @@ export default function NoteEditor({ note }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const { updateNote } = useNotes();
-  const noteIdRef = useRef(note.id);
 
   const debouncedTitle = useDebounce(title, 500);
   const debouncedContent = useDebounce(content, 500);
 
   useEffect(() => {
-    noteIdRef.current = note.id;
     setTitle(note.title);
     setContent(note.content);
   }, [note.id, note.title, note.content]);
 
   useEffect(() => {
-    // Only update if the debounced value is different from the note's current state
+    // Only update if the title has actually changed
     if (debouncedTitle !== note.title) {
-      updateNote(noteIdRef.current, { title: debouncedTitle });
+      updateNote(note.id, { title: debouncedTitle });
     }
-  }, [debouncedTitle, note.title, updateNote]);
+  }, [debouncedTitle, note.id, note.title, updateNote]);
 
   useEffect(() => {
-    // Only update if the debounced value is different from the note's current state
+    // Only update if the content has actually changed
     if (debouncedContent !== note.content) {
-      updateNote(noteIdRef.current, { content: debouncedContent });
+      updateNote(note.id, { content: debouncedContent });
     }
-  }, [debouncedContent, note.content, updateNote]);
+  }, [debouncedContent, note.id, note.content, updateNote]);
 
   return (
     <div className="flex flex-col h-full">
