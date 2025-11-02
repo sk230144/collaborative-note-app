@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import VersionHistory from './version-history';
 import { formatDistanceToNow } from 'date-fns';
+import { useDebounce } from '@/hooks/use-debounce';
+import type { Timestamp } from 'firebase/firestore';
 
 type NoteEditorProps = {
   note: Note;
@@ -16,7 +18,9 @@ export default function NoteEditor({ note }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const { updateNote } = useNotes();
-  const isMounted = useRef(false);
+
+  const debouncedTitle = useDebounce(title, 500);
+  const debouncedContent = useDebounce(content, 500);
 
   // This effect will re-sync the local state (title, content)
   // whenever the active note prop changes.
@@ -25,32 +29,34 @@ export default function NoteEditor({ note }: NoteEditorProps) {
     setContent(note.content);
   }, [note.id, note.title, note.content]);
 
-  // This effect handles saving the note.
+  // This effect handles saving the debounced changes.
   useEffect(() => {
-    // We use a ref to prevent saving on the initial component mount.
-    // We only want to save when the user actually makes a change.
-    if (isMounted.current) {
-      // Create a timeout to save the note 500ms after the user stops typing.
-      const timer = setTimeout(() => {
-        const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
-        if (title !== note.title) {
-          updates.title = title;
-        }
-        if (content !== note.content) {
-          updates.content = content;
-        }
-        if (Object.keys(updates).length > 0) {
-          updateNote(note.id, updates);
-        }
-      }, 500); // 500ms debounce delay
+      const updates: Partial<Pick<Note, 'title' | 'content'>> = {};
+      let needsUpdate = false;
 
-      // Cleanup function to clear the timeout if the user types again
-      return () => clearTimeout(timer);
-    } else {
-      // On the first render, we set the ref to true.
-      isMounted.current = true;
+      if (debouncedTitle !== note.title) {
+        updates.title = debouncedTitle;
+        needsUpdate = true;
+      }
+      if (debouncedContent !== note.content) {
+        updates.content = debouncedContent;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        updateNote(note.id, updates);
+      }
+  }, [debouncedTitle, debouncedContent, note, updateNote]);
+
+  const getUpdatedAtTimestamp = (timestamp: Timestamp | number): Date => {
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp);
     }
-  }, [title, content, note.id, note.title, note.content, updateNote]);
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return new Date();
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -72,7 +78,7 @@ export default function NoteEditor({ note }: NoteEditorProps) {
         />
       </div>
        <div className="text-xs text-muted-foreground mt-4 text-right">
-        Last updated {formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true })}
+        Last updated {formatDistanceToNow(getUpdatedAtTimestamp(note.updatedAt), { addSuffix: true })}
       </div>
     </div>
   );

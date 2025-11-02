@@ -15,6 +15,7 @@ import { History, RotateCcw } from 'lucide-react';
 import { useNotes } from '@/context/notes-provider';
 import { format } from 'date-fns';
 import { useToast } from "@/hooks/use-toast";
+import type { Timestamp } from "firebase/firestore";
 
 type VersionHistoryProps = {
   note: Note;
@@ -30,6 +31,16 @@ export default function VersionHistory({ note }: VersionHistoryProps) {
       title: "Version Restored",
       description: "The note has been updated to the selected version.",
     });
+  };
+
+  const getVersionTimestamp = (timestamp: Timestamp | number): Date => {
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp);
+    }
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return new Date();
   };
 
   return (
@@ -49,12 +60,12 @@ export default function VersionHistory({ note }: VersionHistoryProps) {
         </SheetHeader>
         <ScrollArea className="flex-1 -mr-6 mt-4 pr-6">
           <div className="space-y-4">
-            {note.versions.length > 0 ? (
-              note.versions.map((version) => (
+            {note.versions && note.versions.length > 0 ? (
+              [...note.versions].sort((a,b) => getVersionTimestamp(b.timestamp).getTime() - getVersionTimestamp(a.timestamp).getTime()).map((version) => (
                 <div key={version.id} className="p-4 border rounded-lg bg-secondary/50">
                   <div className="flex justify-between items-center mb-2">
                     <p className="text-sm font-medium">
-                      {format(new Date(version.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                      {format(getVersionTimestamp(version.timestamp), "MMM d, yyyy 'at' h:mm a")}
                     </p>
                     <Button
                       size="sm"

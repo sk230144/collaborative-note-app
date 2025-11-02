@@ -1,17 +1,29 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
 import type { Note } from '@/lib/types';
+import { 
+  useFirebase, 
+  useUser, 
+  useCollection,
+  useMemoFirebase,
+} from '@/firebase';
+import { 
+  initiateAnonymousSignIn 
+} from '@/firebase/non-blocking-login';
+import { 
+  addDocumentNonBlocking, 
+  deleteDocumentNonBlocking, 
+  setDocumentNonBlocking,
+  updateDocumentNonBlocking
+} from '@/firebase/non-blocking-updates';
+import { collection, doc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 
-const NOTES_STORAGE_KEY = 'collab-notes';
-
-const createWelcomeNote = (): Note => ({
-    id: crypto.randomUUID(),
+const createWelcomeNote = (userId: string): Omit<Note, 'id' | 'createdAt' | 'updatedAt'> => ({
     title: 'Welcome to CollabNote!',
-    content: 'This is your first note. Start editing here!\n\nFeatures:\n- Create, edit, and delete notes.\n- Your notes are saved automatically after you stop typing.\n- Changes are synced across tabs in real-time.\n- Click the "History" button to view and restore previous versions of this note.',
+    content: 'This is your first note. Start editing here!\n\nFeatures:\n- Create, edit, and delete notes.\n- Your notes are saved automatically and synced in real-time.\n- Click the "History" button to view and restore previous versions.',
     versions: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    ownerId: userId,
 });
 
 type NotesContextType = {
@@ -22,119 +34,133 @@ type NotesContextType = {
   deleteNote: (noteId: string) => void;
   updateNote: (noteId: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => void;
   restoreVersion: (noteId: string, versionId: string) => void;
+  isLoading: boolean;
 };
 
 const NotesContext = createContext<NotesContextType | undefined>(undefined);
 
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [notes, setNotes] = useState<Note[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const { auth, firestore } = useFirebase();
+  const { user, isUserLoading } = useUser();
 
+  // Automatically sign in users anonymously
   useEffect(() => {
-    try {
-      const item = window.localStorage.getItem(NOTES_STORAGE_KEY);
-      if (item) {
-        const parsedNotes = JSON.parse(item);
-        setNotes(parsedNotes);
-        if (parsedNotes.length > 0 && !activeNoteId) {
-          setActiveNoteId(parsedNotes[0].id);
-        }
-      } else {
-        const welcomeNote = createWelcomeNote();
-        setNotes([welcomeNote]);
-        setActiveNoteId(welcomeNote.id);
-        window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify([welcomeNote]));
-      }
-    } catch (error) {
-      console.error('Error initializing notes from localStorage', error);
-      const welcomeNote = createWelcomeNote();
-      setNotes([welcomeNote]);
-      setActiveNoteId(welcomeNote.id);
+    if (!isUserLoading && !user) {
+      initiateAnonymousSignIn(auth);
     }
-  }, [activeNoteId]);
+  }, [isUserLoading, user, auth]);
 
-  const saveNotes = useCallback((newNotes: Note[]) => {
-    try {
-      window.localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(newNotes));
-      setNotes(newNotes);
-    } catch (error) {
-      console.error('Error saving notes to localStorage', error);
-    }
-  }, []);
+  const notesCollectionRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(
+      collection(firestore, 'users', user.uid, 'notes'),
+      orderBy('updatedAt', 'desc')
+    );
+  }, [firestore, user]);
 
+  const { data: notes, isLoading: isLoadingNotes } = useCollection<Note>(notesCollectionRef);
+
+  // Set active note when notes load
   useEffect(() => {
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === NOTES_STORAGE_KEY && event.newValue) {
-        try {
-          const newNotes = JSON.parse(event.newValue);
-          setNotes(newNotes);
-        } catch (error) {
-          console.error('Error parsing notes from storage event', error);
-        }
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    if (notes && notes.length > 0 && !activeNoteId) {
+      setActiveNoteId(notes[0].id);
+    } else if (notes && notes.length === 0) {
+      setActiveNoteId(null);
+    }
+  }, [notes, activeNoteId]);
 
-  const addNote = () => {
-    const newNote: Note = {
-      id: crypto.randomUUID(),
+  // Create a welcome note for new users
+  useEffect(() => {
+    if (user && firestore && notes?.length === 0) {
+      const welcomeNoteData = createWelcomeNote(user.uid);
+      const newNoteRef = doc(collection(firestore, 'users', user.uid, 'notes'));
+      setDocumentNonBlocking(newNoteRef, {
+        ...welcomeNoteData,
+        id: newNoteRef.id,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+  }, [user, firestore, notes]);
+
+
+  const addNote = useCallback(() => {
+    if (!firestore || !user) return;
+    const newNoteRef = doc(collection(firestore, 'users', user.uid, 'notes'));
+    addDocumentNonBlocking(newNoteRef, {
+      id: newNoteRef.id,
       title: 'Untitled Note',
       content: '',
       versions: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    const newNotes = [newNote, ...notes];
-    saveNotes(newNotes);
-    setActiveNoteId(newNote.id);
-  };
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ownerId: user.uid,
+    });
+    setActiveNoteId(newNoteRef.id);
+  }, [firestore, user]);
 
-  const deleteNote = (noteId: string) => {
-    const newNotes = notes.filter((note) => note.id !== noteId);
-    saveNotes(newNotes);
+  const deleteNote = useCallback((noteId: string) => {
+    if (!firestore || !user) return;
+    const noteRef = doc(firestore, 'users', user.uid, 'notes', noteId);
+    deleteDocumentNonBlocking(noteRef);
+
     if (activeNoteId === noteId) {
-      setActiveNoteId(newNotes.length > 0 ? newNotes[0].id : null);
+       const newActiveNote = notes?.find(n => n.id !== noteId);
+       setActiveNoteId(newActiveNote ? newActiveNote.id : null);
     }
-  };
+  }, [firestore, user, activeNoteId, notes]);
 
   const updateNote = useCallback((noteId: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => {
-    const newNotes = notes.map((note) => {
-      if (note.id === noteId) {
-        const noteToUpdate = note;
-        const hasContentChanged = 'content' in updates && updates.content !== noteToUpdate.content;
-        
-        const newVersions = hasContentChanged ? [
-          { id: crypto.randomUUID(), content: noteToUpdate.content, timestamp: noteToUpdate.updatedAt },
-          ...noteToUpdate.versions,
-        ].slice(0, 20) : noteToUpdate.versions;
+    if (!firestore || !user) return;
+    const noteRef = doc(firestore, 'users', user.uid, 'notes', noteId);
+    const originalNote = notes?.find(n => n.id === noteId);
 
-        return {
-          ...noteToUpdate,
-          ...updates,
-          updatedAt: Date.now(),
-          ...(hasContentChanged && { versions: newVersions }),
-        };
-      }
-      return note;
-    });
-    saveNotes(newNotes);
-  }, [notes, saveNotes]);
+    if (!originalNote) return;
 
-  const restoreVersion = (noteId: string, versionId: string) => {
-    const note = notes.find((n) => n.id === noteId);
+    const hasContentChanged = 'content' in updates && updates.content !== originalNote.content;
+
+    const newVersions = hasContentChanged ? [
+      { id: crypto.randomUUID(), content: originalNote.content, timestamp: originalNote.updatedAt },
+      ...originalNote.versions,
+    ].slice(0, 20) : originalNote.versions;
+
+    const dataToUpdate: any = {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    };
+
+    if (hasContentChanged) {
+      dataToUpdate.versions = newVersions;
+    }
+
+    updateDocumentNonBlocking(noteRef, dataToUpdate);
+  }, [firestore, user, notes]);
+
+  const restoreVersion = useCallback((noteId: string, versionId: string) => {
+    if (!firestore || !user) return;
+
+    const note = notes?.find((n) => n.id === noteId);
     if (!note) return;
 
     const version = note.versions.find((v) => v.id === versionId);
     if (!version) return;
 
     updateNote(noteId, { content: version.content });
-  };
+  }, [firestore, user, notes, updateNote]);
   
-  const activeNote = notes.find(note => note.id === activeNoteId);
+  const activeNote = useMemo(() => notes?.find(note => note.id === activeNoteId), [notes, activeNoteId]);
 
-  const value = { notes, activeNote, setActiveNoteId, addNote, deleteNote, updateNote, restoreVersion };
+  const value = { 
+    notes: notes || [], 
+    activeNote, 
+    setActiveNoteId, 
+    addNote, 
+    deleteNote, 
+    updateNote, 
+    restoreVersion,
+    isLoading: isUserLoading || isLoadingNotes,
+  };
 
   return (
     <NotesContext.Provider value={value}>

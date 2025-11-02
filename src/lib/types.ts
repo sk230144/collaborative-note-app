@@ -1,7 +1,9 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export type NoteVersion = {
   id: string;
   content: string;
-  timestamp: number;
+  timestamp: Timestamp | number; // Firestore uses Timestamp, client might use number
 };
 
 export type Note = {
@@ -9,6 +11,7 @@ export type Note = {
   title: string;
   content: string;
   versions: NoteVersion[];
-  createdAt: number;
-  updatedAt: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  ownerId: string;
 };
